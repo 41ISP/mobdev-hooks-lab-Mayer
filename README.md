@@ -198,7 +198,7 @@ useEffect(() => {
 ### Три формы второго аргумента
 
 | Второй аргумент | Когда срабатывает                                                    |
-| --------------- | -------------------------------------------------------------------- |
+| --------------- | ---------------------------------------------------------------------- |
 | не передан      | после **каждого** рендера                                            |
 | `[]`            | один раз, после первого рендера (монтирование)                       |
 | `[a, b]`        | после первого рендера и затем каждый раз, когда `a` или `b` меняются |
@@ -309,3 +309,154 @@ function CourseList({ courses }) {
   );
 }
 ```
+
+---
+
+## Пример: тудушка (add / update / delete на одном массиве)
+
+Классический учебный пример, который собирает воедино все три операции с массивом в state: добавление через спред, изменение через `.map()`, удаление через `.filter()`. По структуре он очень похож на `Shelf` из задания — задачи вместо книг, `done` вместо `read`.
+
+```jsx
+import { useState } from "react";
+
+function App() {
+  const [todos, setTodos] = useState([]);
+  const [draft, setDraft] = useState("");
+
+  function handleAdd() {
+    const title = draft.trim();
+    if (title === "") return; // пустую/пробельную строку не добавляем
+
+    const newTodo = {
+      id: Date.now(), // простой способ получить уникальный id
+      title,
+      done: false,
+    };
+
+    // ДОБАВЛЕНИЕ — через спред, старые элементы не трогаем
+    setTodos((prev) => [...prev, newTodo]);
+    setDraft(""); // очищаем поле после добавления
+  }
+
+  function handleToggle(id) {
+    // ИЗМЕНЕНИЕ — через .map(), пересоздаём только нужный объект,
+    // остальные задачи остаются теми же объектами
+    setTodos((prev) =>
+      prev.map((todo) =>
+        todo.id === id ? { ...todo, done: !todo.done } : todo
+      )
+    );
+  }
+
+  function handleDelete(id) {
+    // УДАЛЕНИЕ — через .filter(), новый массив без нужного элемента
+    setTodos((prev) => prev.filter((todo) => todo.id !== id));
+  }
+
+  return (
+    <div>
+      <input
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && handleAdd()}
+        placeholder="Новая задача..."
+      />
+      <button onClick={handleAdd}>Добавить</button>
+
+      <ul>
+        {todos.map((todo) => (
+          <li key={todo.id}>
+            <input
+              type="checkbox"
+              checked={todo.done}
+              onChange={() => handleToggle(todo.id)}
+            />
+            <span>{todo.title}</span>
+            <button onClick={() => handleDelete(todo.id)}>Удалить</button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+```
+
+Три ключевых момента:
+
+- **Добавление** всегда создаёт новый массив: `[...prev, newTodo]`, а не `prev.push(newTodo)`.
+- **Изменение одного элемента** — через `.map()`: находим нужный `id`, для него собираем новый объект (`{ ...todo, done: !todo.done }`), для остальных возвращаем тот же самый объект без изменений (`todo`) — так React может пропустить перерисовку неизменившихся элементов.
+- **Удаление** — через `.filter()`: возвращаем массив без элемента с нужным `id`, ничего не мутируя.
+
+## Условный рендер через state
+
+Помимо самих данных, в state часто хранят **что показывать**: пустой список, состояние загрузки, открыта ли модалка и т.д. Рендерить в зависимости от такого state можно несколькими способами.
+
+### Тернарный оператор — выбор одного из двух вариантов
+
+```jsx
+{
+  todos.length === 0 ? (
+    <p>Задач пока нет</p>
+  ) : (
+    <ul>
+      {todos.map((todo) => (
+        <li key={todo.id}>{todo.title}</li>
+      ))}
+    </ul>
+  );
+}
+```
+
+### `&&` — показать элемент, только если условие истинно
+
+Используется, когда для «иначе» ничего рендерить не нужно.
+
+```jsx
+const [showCompleted, setShowCompleted] = useState(false);
+
+<button onClick={() => setShowCompleted((prev) => !prev)}>
+  {showCompleted ? "Скрыть выполненные" : "Показать выполненные"}
+</button>;
+
+{
+  showCompleted && (
+    <ul>
+      {todos
+        .filter((todo) => todo.done)
+        .map((todo) => (
+          <li key={todo.id}>{todo.title}</li>
+        ))}
+    </ul>
+  );
+}
+```
+
+Осторожно: если слева от `&&` окажется `0` (например, `todos.length && <ul>...`),
+React отрендерит на экране `0`, а не «ничего». Поэтому для чисел лучше явно
+сравнивать: `todos.length > 0 && ...`.
+
+### Ранний `return` — когда вариантов рендера много
+
+Удобно, когда одно из состояний полностью исключает остальную разметку компонента (например, состояние загрузки).
+
+```jsx
+function TodoList({ todos, isLoading }) {
+  if (isLoading) {
+    return <p>Загрузка...</p>;
+  }
+
+  if (todos.length === 0) {
+    return <p>Задач пока нет</p>;
+  }
+
+  return (
+    <ul>
+      {todos.map((todo) => (
+        <li key={todo.id}>{todo.title}</li>
+      ))}
+    </ul>
+  );
+}
+```
+
+Во всех трёх случаях источник правды один — **state** (`todos`, `showCompleted`, `isLoading`). JSX только читает его и решает, что нарисовать; сам JSX никогда не меняет state напрямую.
